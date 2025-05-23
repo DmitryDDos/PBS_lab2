@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <omp.h>
+#include <time.h>
 
 int main() {
     // Получаем размер массива из переменной окружения ARRAY_SIZE
@@ -23,22 +24,27 @@ int main() {
         return 1;
     }
 
-    // Инициализируем массив (например, последовательными значениями)
+    // Инициализируем массив
     for (int i = 0; i < array_size; i++) {
-        array[i] = i + 1; // Можно заменить на любую другую инициализацию
+        array[i] = i + 1;
     }
 
-    // Параллельное вычисление суммы с OpenMP
+    // Начинаем замер времени
+    double start_time = omp_get_wtime();
+
+    // Параллельное вычисление суммы
     double sum = 0.0;
     #pragma omp parallel for reduction(+:sum)
     for (int i = 0; i < array_size; i++) {
         sum += array[i];
     }
 
-    // Выводим результат
-    printf("Array size: %d\n", array_size);
-    printf("Sum of array elements: %.2f\n", sum);
+    // Заканчиваем замер времени
+    double end_time = omp_get_wtime();
+    double elapsed_time = end_time - start_time;
 
+    // Выводим только время выполнения
+    printf("%.6f\n", elapsed_time);
     // Освобождаем память
     free(array);
 
