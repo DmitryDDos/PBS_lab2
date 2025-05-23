@@ -2,8 +2,8 @@
 #include <vector>
 #include <chrono>
 #include <omp.h>
-#include <stdexcept>
-#include <iomanip>
+#include <locale>
+#include <windows.h>  // Для Windows
 
 using namespace std;
 using namespace std::chrono;
@@ -49,17 +49,15 @@ void operations_parallel(const vector<vector<double>>& arr1, const vector<vector
     }
 }
 
-int main(int argc, char* argv[]) {
-    if (argc < 4) {
-        cerr << "Usage: " << argv[0] << " <rows> <cols> <mode> [threads]" << endl;
-        cerr << "Modes: 1 - sequential, 2 - parallel" << endl;
-        return 1;
-    }
+int main() {
+    // Установка UTF-8 кодировки для консоли Windows
+    SetConsoleOutputCP(CP_UTF8);
+    // Установка локали для корректного вывода русского текста
+    setlocale(LC_ALL, "Russian");
 
-    int rows = stoi(argv[1]);
-    int cols = stoi(argv[2]);
-    int mode = stoi(argv[3]);
-    int threads = mode == 2 ? (argc > 4 ? stoi(argv[4]) : omp_get_max_threads()) : 1;
+    int rows = 1000;
+    int cols = 1000;
+    int threads = 4;
 
     vector<vector<double>> arr1, arr2;
     initialize_arrays(arr1, arr2, rows, cols);
@@ -69,19 +67,20 @@ int main(int argc, char* argv[]) {
     vector<vector<double>> mul(rows, vector<double>(cols));
     vector<vector<double>> div(rows, vector<double>(cols));
 
-    auto start = high_resolution_clock::now();
+    // Последовательный запуск
+    auto start_seq = high_resolution_clock::now();
+    operations_sequential(arr1, arr2, add, sub, mul, div, rows, cols);
+    auto end_seq = high_resolution_clock::now();
+    auto duration_seq = duration_cast<microseconds>(end_seq - start_seq).count();
 
-    if (mode == 1) {
-        operations_sequential(arr1, arr2, add, sub, mul, div, rows, cols);
-    }
-    else {
-        operations_parallel(arr1, arr2, add, sub, mul, div, rows, cols, threads);
-    }
+    // Параллельный запуск
+    auto start_par = high_resolution_clock::now();
+    operations_parallel(arr1, arr2, add, sub, mul, div, rows, cols, threads);
+    auto end_par = high_resolution_clock::now();
+    auto duration_par = duration_cast<microseconds>(end_par - start_par).count();
 
-    auto end = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(end - start).count();
-
-    cout << duration << endl; // Выводим только время в микросекундах
+    cout << "Время последовательной версии: " << duration_seq << " мкс" << endl;
+    cout << "Время параллельной версии (" << threads << " потоков): " << duration_par << " мкс" << endl;
 
     return 0;
 }
