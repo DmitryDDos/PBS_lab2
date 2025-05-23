@@ -1,13 +1,13 @@
 #include <iostream>
 #include <algorithm>
 #include <omp.h>
-#include <cstdlib> // Для std::atoi
+#include <cstdlib>
+#include <chrono>
+#include <locale>
 
-// Последовательная реализация partition
 int partition(int* arr, int low, int high) {
     int pivot = arr[high];
     int i = (low - 1);
-
     for (int j = low; j <= high - 1; j++) {
         if (arr[j] <= pivot) {
             i++;
@@ -18,7 +18,6 @@ int partition(int* arr, int low, int high) {
     return (i + 1);
 }
 
-// Последовательная реализация быстрой сортировки
 void quickSort_sequential(int* arr, int low, int high) {
     if (low < high) {
         int pi = partition(arr, low, high);
@@ -27,12 +26,9 @@ void quickSort_sequential(int* arr, int low, int high) {
     }
 }
 
-// Параллельная реализация быстрой сортировки с OpenMP
 void quickSort_parallel(int* arr, int low, int high, int depth = 0) {
     if (low < high) {
         int pi = partition(arr, low, high);
-
-        // Ограничиваем глубину рекурсии для параллелизма
         if (depth < omp_get_max_threads()) {
 #pragma omp task
             quickSort_parallel(arr, low, pi - 1, depth + 1);
@@ -47,35 +43,41 @@ void quickSort_parallel(int* arr, int low, int high, int depth = 0) {
     }
 }
 
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <number_of_elements>" << std::endl;
-        return 1;
-    }
+int main() {
+    // Установка локали (системная локаль, обычно UTF-8)
+    std::locale::global(std::locale(""));
+    std::wcout.imbue(std::locale());
 
-    const size_t SIZE = std::atoi(argv[1]); // Число элементов передается в качестве аргумента
+    const size_t SIZE = 1000000;
+
     int* dynamicArray_seq = new int[SIZE];
     int* dynamicArray_par = new int[SIZE];
 
-    // Инициализация массива случайными числами
     for (size_t i = 0; i < SIZE; ++i) {
         int val = rand() % 10000;
         dynamicArray_seq[i] = val;
         dynamicArray_par[i] = val;
     }
 
-    // Последовательная сортировка
+    auto start_seq = std::chrono::high_resolution_clock::now();
     quickSort_sequential(dynamicArray_seq, 0, SIZE - 1);
+    auto end_seq = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed_seq = end_seq - start_seq;
 
-    // Параллельная сортировка
+    auto start_par = std::chrono::high_resolution_clock::now();
 #pragma omp parallel
     {
 #pragma omp single
         quickSort_parallel(dynamicArray_par, 0, SIZE - 1);
     }
+    auto end_par = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed_par = end_par - start_par;
 
-    // Удаление динамически выделенной памяти
+    std::wcout << L"Время выполнения последовательной сортировки: " << elapsed_seq.count() << L" секунд." << std::endl;
+    std::wcout << L"Время выполнения параллельной сортировки: " << elapsed_par.count() << L" секунд." << std::endl;
+
     delete[] dynamicArray_seq;
     delete[] dynamicArray_par;
+
     return 0;
 }
