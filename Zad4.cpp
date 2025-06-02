@@ -1,98 +1,148 @@
+
 #include <iostream>
 #include <vector>
-#include <cstdlib>
-#include <ctime>
+#include <chrono>
 #include <omp.h>
-#include <iomanip> // Для форматирования вывода
+#include <algorithm> // Для std::sort
+#include <string>    // Для std::stoi
 
-void quickSort(std::vector<int>& arr, int left, int right) {
-    int i = left, j = right;
-    int pivot = arr[(left + right) / 2];
+using namespace std;
+using namespace std::chrono;
 
-    while (i <= j) {
-        while (arr[i] < pivot) i++;
-        while (arr[j] > pivot) j--;
-        if (i <= j) {
-            std::swap(arr[i], arr[j]);
-            i++;
-            j--;
+// Функция для инициализации двумерного массива случайными числами
+void initializeArray(vector<vector<double>>& arr, int rows, int cols) {
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            arr[i][j] = static_cast<double>(rand()) / RAND_MAX * 10.0; // Числа от 0 до 10
         }
     }
-
-    if (left < j) quickSort(arr, left, j);
-    if (i < right) quickSort(arr, i, right);
 }
 
-void parallelQuickSort(std::vector<int>& arr, int left, int right) {
-    if (right - left < 1000) {
-        quickSort(arr, left, right);
-    } else {
-        int i = left, j = right;
-        int pivot = arr[(left + right) / 2];
+// Функция для последовательной сортировки подмассивов
+void sequentialSortSubarrays(vector<vector<double>>& arr, int rows, int cols, int num_parts) {
+    int rows_per_part = rows / num_parts;
+    if (rows_per_part == 0) rows_per_part = 1; // Защита от деления на 0 или слишком малого числа частей
 
-        while (i <= j) {
-            while (arr[i] < pivot) i++;
-            while (arr[j] > pivot) j--;
-            if (i <= j) {
-                std::swap(arr[i], arr[j]);
-                i++;
-                j--;
+    for (int part = 0; part < num_parts; ++part) {
+        int start_row = part * rows_per_part;
+        int end_row = (part == num_parts - 1) ? rows : (part + 1) * rows_per_part;
+        // Преобразуем подмассив в одномерный вектор для сортировки
+        vector<double> subarray;
+        for (int i = start_row; i < end_row && i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                subarray.push_back(arr[i][j]);
             }
         }
+        // Сортируем подмассив
+        sort(subarray.begin(), subarray.end());
+        // Записываем отсортированные данные обратно
+        size_t idx = 0;
+        for (int i = start_row; i < end_row && i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                if (idx < subarray.size()) {
+                    arr[i][j] = subarray[idx++];
+                }
+            }
+        }
+    }
+}
 
-        #pragma omp task shared(arr)
-        if (left < j) parallelQuickSort(arr, left, j);
-        #pragma omp task shared(arr)
-        if (i < right) parallelQuickSort(arr, i, right);
+// Функция для параллельной сортировки подмассивов с OpenMP
+void parallelSortSubarrays(vector<vector<double>>& arr, int rows, int cols, int num_threads) {
+    int rows_per_part = rows / num_threads;
+    if (rows_per_part == 0) rows_per_part = 1; // Защита от деления на 0
+
+    omp_set_num_threads(num_threads);
+#pragma omp parallel for
+    for (int part = 0; part < num_threads; ++part) {
+        int start_row = part * rows_per_part;
+        int end_row = (part == num_threads - 1) ? rows : (part + 1) * rows_per_part;
+        // Преобразуем подмассив в одномерный вектор для сортировки
+        vector<double> subarray;
+        for (int i = start_row; i < end_row && i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                subarray.push_back(arr[i][j]);
+            }
+        }
+        // Сортируем подмассив
+        sort(subarray.begin(), subarray.end());
+        // Записываем отсортированные данные обратно
+        size_t idx = 0;
+        for (int i = start_row; i < end_row && i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                if (idx < subarray.size()) {
+                    arr[i][j] = subarray[idx++];
+                }
+            }
+        }
     }
 }
 
 int main(int argc, char* argv[]) {
-    int numThreads;
+    // Параметры для двумерных массивов
+    const int ROWS = 1000;
+    const int COLS = 1000; // 400*400 = 160000 элементов (>100000)
+    vector<vector<double>> A(ROWS, vector<double>(COLS));
+    vector<vector<double>> B(ROWS, vector<double>(COLS));
 
-    // Проверка, передано ли количество ядер в аргументах командной строки
-    if (argc == 2) {
-        numThreads = std::atoi(argv[1]);
-    } else {
-        std::cout << "Enter the number of threads: ";
-        std::cin >> numThreads;
-    }
-
-    omp_set_num_threads(numThreads);
-    std::cout << "Number of threads set to: " << numThreads << std::endl;
-
-    const size_t ARRAY_SIZE = 100000;
-
-    // Создание массива
-    std::vector<int> array(ARRAY_SIZE);
-
-    // Заполнение массива случайными числами
+    // Инициализация данных
     srand(static_cast<unsigned>(time(0)));
-    for (size_t i = 0; i < ARRAY_SIZE; ++i) {
-        array[i] = rand() % 100;
+    initializeArray(A, ROWS, COLS);
+    initializeArray(B, ROWS, COLS);
+
+    // Определение количества ядер (и потоков)
+    int num_cores;
+    if (argc > 1) {
+        // Если передан аргумент командной строки (для суперкомпьютера)
+        num_cores = stoi(argv[1]);
+        cout << "Number of cores (from command line): " << num_cores << endl;
+    }
+    else {
+        // Иначе запрашиваем у пользователя (для локального компьютера)
+        cout << "Enter the number of cores (threads) to use: ";
+        cin >> num_cores;
+        while (num_cores <= 0) {
+            cout << "Please enter a positive number of cores: ";
+            cin >> num_cores;
+        }
+        cout << "Number of cores set to: " << num_cores << endl;
     }
 
-    // Сортировка массива (последовательная)
-    double startTime1 = omp_get_wtime();
-    quickSort(array, 0, ARRAY_SIZE - 1);
-    double elapsedTime1 = omp_get_wtime() - startTime1;
-    std::cout << std::fixed << std::setprecision(6);
-    std::cout << "Sorting of the array (sequential) completed in " << elapsedTime1 << " seconds." << std::endl;
+    // --- Сортировка подмассивов для массива A ---
+    cout << "=== Sorting Subarrays for Array A ===\n";
+    // Последовательное выполнение
+    vector<vector<double>> A_seq = A; // Копия для последовательной обработки
+    auto start = high_resolution_clock::now();
+    sequentialSortSubarrays(A_seq, ROWS, COLS, num_cores); // Делим на num_cores частей
+    auto end = high_resolution_clock::now();
+    duration<double> seq_duration = duration_cast<duration<double>>(end - start);
+    cout << "Sequential Sorting Subarrays (A) time: " << seq_duration.count() << " seconds\n";
 
-    // Заполнение массива случайными числами снова для параллельной сортировки
-    for (size_t i = 0; i < ARRAY_SIZE; ++i) {
-        array[i] = rand() % 100;
-    }
+    // Параллельное выполнение с заданным количеством потоков
+    vector<vector<double>> A_par = A; // Копия для параллельной обработки
+    start = high_resolution_clock::now();
+    parallelSortSubarrays(A_par, ROWS, COLS, num_cores);
+    end = high_resolution_clock::now();
+    duration<double> par_duration = duration_cast<duration<double>>(end - start);
+    cout << "Parallel Sorting Subarrays (A) time with " << num_cores << " threads: " << par_duration.count() << " seconds\n";
 
-    // Сортировка массива (параллельная)
-    double startTime2 = omp_get_wtime();
-    #pragma omp parallel
-    {
-        #pragma omp single
-        parallelQuickSort(array, 0, ARRAY_SIZE - 1);
-    }
-    double elapsedTime2 = omp_get_wtime() - startTime2;
-    std::cout << "Sorting of the array (parallel) completed in " << elapsedTime2 << " seconds." << std::endl;
+    // --- Сортировка подмассивов для массива B ---
+    cout << "\n=== Sorting Subarrays for Array B ===\n";
+    // Последовательное выполнение
+    vector<vector<double>> B_seq = B; // Копия для последовательной обработки
+    start = high_resolution_clock::now();
+    sequentialSortSubarrays(B_seq, ROWS, COLS, num_cores); // Делим на num_cores частей
+    end = high_resolution_clock::now();
+    seq_duration = duration_cast<duration<double>>(end - start);
+    cout << "Sequential Sorting Subarrays (B) time: " << seq_duration.count() << " seconds\n";
+
+    // Параллельное выполнение с заданным количеством потоков
+    vector<vector<double>> B_par = B; // Копия для параллельной обработки
+    start = high_resolution_clock::now();
+    parallelSortSubarrays(B_par, ROWS, COLS, num_cores);
+    end = high_resolution_clock::now();
+    par_duration = duration_cast<duration<double>>(end - start);
+    cout << "Parallel Sorting Subarrays (B) time with " << num_cores << " threads: " << par_duration.count() << " seconds\n";
 
     return 0;
 }
