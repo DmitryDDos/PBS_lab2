@@ -43,12 +43,27 @@ void quickSort_parallel(int* arr, int low, int high, int depth = 0) {
     }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     // Установка локали (системная локаль, обычно UTF-8)
     std::locale::global(std::locale(""));
     std::wcout.imbue(std::locale());
 
-    const size_t SIZE = 1000000;
+    int numThreads;
+
+    // Проверка, передано ли количество ядер в аргументах командной строки
+    if (argc == 2) {
+        numThreads = std::atoi(argv[1]);
+    }
+    else {
+        std::wcout << L"Введите количество потоков: ";
+        std::cin >> numThreads;
+    }
+
+    // Установка количества потоков
+    omp_set_num_threads(numThreads);
+    std::wcout << L"Количество потоков установлено на: " << numThreads << std::endl;
+
+    const size_t SIZE = 500000;
 
     int* dynamicArray_seq = new int[SIZE];
     int* dynamicArray_par = new int[SIZE];
