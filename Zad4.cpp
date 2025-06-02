@@ -1,86 +1,98 @@
 #include <iostream>
 #include <vector>
-#include <chrono>
+#include <cstdlib>
+#include <ctime>
 #include <omp.h>
-#include <locale>
-#include <windows.h>  // Для Windows
+#include <iomanip> // Для форматирования вывода
 
-using namespace std;
-using namespace std::chrono;
+void quickSort(std::vector<int>& arr, int left, int right) {
+    int i = left, j = right;
+    int pivot = arr[(left + right) / 2];
 
-void initialize_arrays(vector<vector<double>>& arr1, vector<vector<double>>& arr2, int rows, int cols) {
-    arr1.resize(rows, vector<double>(cols));
-    arr2.resize(rows, vector<double>(cols));
-
-#pragma omp parallel for collapse(2)
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            arr1[i][j] = i + j + 1;
-            arr2[i][j] = (i + 1) * (j + 1);
+    while (i <= j) {
+        while (arr[i] < pivot) i++;
+        while (arr[j] > pivot) j--;
+        if (i <= j) {
+            std::swap(arr[i], arr[j]);
+            i++;
+            j--;
         }
+    }
+
+    if (left < j) quickSort(arr, left, j);
+    if (i < right) quickSort(arr, i, right);
+}
+
+void parallelQuickSort(std::vector<int>& arr, int left, int right) {
+    if (right - left < 1000) {
+        quickSort(arr, left, right);
+    } else {
+        int i = left, j = right;
+        int pivot = arr[(left + right) / 2];
+
+        while (i <= j) {
+            while (arr[i] < pivot) i++;
+            while (arr[j] > pivot) j--;
+            if (i <= j) {
+                std::swap(arr[i], arr[j]);
+                i++;
+                j--;
+            }
+        }
+
+        #pragma omp task shared(arr)
+        if (left < j) parallelQuickSort(arr, left, j);
+        #pragma omp task shared(arr)
+        if (i < right) parallelQuickSort(arr, i, right);
     }
 }
 
-void operations_sequential(const vector<vector<double>>& arr1, const vector<vector<double>>& arr2,
-    vector<vector<double>>& add, vector<vector<double>>& sub,
-    vector<vector<double>>& mul, vector<vector<double>>& div, int rows, int cols) {
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            add[i][j] = arr1[i][j] + arr2[i][j];
-            sub[i][j] = arr1[i][j] - arr2[i][j];
-            mul[i][j] = arr1[i][j] * arr2[i][j];
-            div[i][j] = arr2[i][j] != 0 ? arr1[i][j] / arr2[i][j] : 0;
-        }
+int main(int argc, char* argv[]) {
+    int numThreads;
+
+    // Проверка, передано ли количество ядер в аргументах командной строки
+    if (argc == 2) {
+        numThreads = std::atoi(argv[1]);
+    } else {
+        std::cout << "Enter the number of threads: ";
+        std::cin >> numThreads;
     }
-}
 
-void operations_parallel(const vector<vector<double>>& arr1, const vector<vector<double>>& arr2,
-    vector<vector<double>>& add, vector<vector<double>>& sub,
-    vector<vector<double>>& mul, vector<vector<double>>& div, int rows, int cols, int threads) {
-    omp_set_num_threads(threads);
-#pragma omp parallel for collapse(2)
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            add[i][j] = arr1[i][j] + arr2[i][j];
-            sub[i][j] = arr1[i][j] - arr2[i][j];
-            mul[i][j] = arr1[i][j] * arr2[i][j];
-            div[i][j] = arr2[i][j] != 0 ? arr1[i][j] / arr2[i][j] : 0;
-        }
+    omp_set_num_threads(numThreads);
+    std::cout << "Number of threads set to: " << numThreads << std::endl;
+
+    const size_t ARRAY_SIZE = 100000;
+
+    // Создание массива
+    std::vector<int> array(ARRAY_SIZE);
+
+    // Заполнение массива случайными числами
+    srand(static_cast<unsigned>(time(0)));
+    for (size_t i = 0; i < ARRAY_SIZE; ++i) {
+        array[i] = rand() % 100;
     }
-}
 
-int main() {
-    // Установка UTF-8 кодировки для консоли Windows
-    SetConsoleOutputCP(CP_UTF8);
-    // Установка локали для корректного вывода русского текста
-    setlocale(LC_ALL, "Russian");
+    // Сортировка массива (последовательная)
+    double startTime1 = omp_get_wtime();
+    quickSort(array, 0, ARRAY_SIZE - 1);
+    double elapsedTime1 = omp_get_wtime() - startTime1;
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "Sorting of the array (sequential) completed in " << elapsedTime1 << " seconds." << std::endl;
 
-    int rows = 1000;
-    int cols = 1000;
-    int threads = 4;
+    // Заполнение массива случайными числами снова для параллельной сортировки
+    for (size_t i = 0; i < ARRAY_SIZE; ++i) {
+        array[i] = rand() % 100;
+    }
 
-    vector<vector<double>> arr1, arr2;
-    initialize_arrays(arr1, arr2, rows, cols);
-
-    vector<vector<double>> add(rows, vector<double>(cols));
-    vector<vector<double>> sub(rows, vector<double>(cols));
-    vector<vector<double>> mul(rows, vector<double>(cols));
-    vector<vector<double>> div(rows, vector<double>(cols));
-
-    // Последовательный запуск
-    auto start_seq = high_resolution_clock::now();
-    operations_sequential(arr1, arr2, add, sub, mul, div, rows, cols);
-    auto end_seq = high_resolution_clock::now();
-    auto duration_seq = duration_cast<microseconds>(end_seq - start_seq).count();
-
-    // Параллельный запуск
-    auto start_par = high_resolution_clock::now();
-    operations_parallel(arr1, arr2, add, sub, mul, div, rows, cols, threads);
-    auto end_par = high_resolution_clock::now();
-    auto duration_par = duration_cast<microseconds>(end_par - start_par).count();
-
-    cout << "Время последовательной версии: " << duration_seq << " мкс" << endl;
-    cout << "Время параллельной версии (" << threads << " потоков): " << duration_par << " мкс" << endl;
+    // Сортировка массива (параллельная)
+    double startTime2 = omp_get_wtime();
+    #pragma omp parallel
+    {
+        #pragma omp single
+        parallelQuickSort(array, 0, ARRAY_SIZE - 1);
+    }
+    double elapsedTime2 = omp_get_wtime() - startTime2;
+    std::cout << "Sorting of the array (parallel) completed in " << elapsedTime2 << " seconds." << std::endl;
 
     return 0;
 }
